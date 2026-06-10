@@ -26,6 +26,7 @@
   "files": [
     "dist/",
     "docs/",
+    "features/",
     "README.md",
     "LICENSE"
   ],
