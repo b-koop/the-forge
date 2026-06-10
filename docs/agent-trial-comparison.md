@@ -1,5 +1,8 @@
 # Agent trial comparison
 
+Status: planning research summary, not implementation documentation.
+Audience: contributors choosing review/research strategies.
+
 ## Explore
 
 Best for fast repo shape and missing-file inventory.
@@ -51,7 +54,7 @@ Use before locking safety semantics or issue acceptance criteria.
 
 Best for mining implementation examples from the prototype.
 
-Reusable prototype patterns from `/Users/benjaminkoop/code/pi/forge/extensions/forge.ts`:
+Reusable prototype patterns from the private Forge prototype should be migrated into committed examples before public release:
 
 - Pi extension command registration
 - queued/follow-up delivery behavior
