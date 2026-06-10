@@ -710,9 +710,9 @@ test("readers see the settings warnings and fallbacks behavior as a verified fea
 	]);
 });
 
-test("readers see the TDD micro-cycle workflow as a verified feature spec", async () => {
+test("readers see the verified TDD micro-cycle feature spec at the public starting path", async () => {
 	const scenarioNames = await readVerifiedFeatureSpec(
-		"tdd-microcycle-workflow.feature",
+		"verified-tdd-microcycle.feature",
 	);
 
 	assert.deepEqual(scenarioNames, [
