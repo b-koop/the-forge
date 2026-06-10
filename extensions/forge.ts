@@ -173,10 +173,10 @@ export function loadForgeSettingsWithWarnings(
 ): ForgeSettingsLoadResult {
 	const globalSource = "global ~/.pi/agent/settings.json";
 	const projectSource = "project .pi/settings.json";
-	const globalSettings = readJsonFile(
-		join(homedir(), ".pi", "agent", "settings.json"),
-		globalSource,
-	);
+	const globalSettingsPath =
+		process.env.PI_FORGE_GLOBAL_SETTINGS_PATH ??
+		join(homedir(), ".pi", "agent", "settings.json");
+	const globalSettings = readJsonFile(globalSettingsPath, globalSource);
 	const projectSettingsPath = join(cwd, ".pi", "settings.json");
 	const warnings = [...globalSettings.warnings];
 	let settings = DEFAULT_FORGE_SETTINGS;

@@ -14,6 +14,18 @@ import {
 
 const repoRoot = new URL("..", import.meta.url).pathname;
 
+// Keep the suite hermetic: point Forge at a temp global settings file so tests
+// never read the developer's real ~/.pi/agent/settings.json. Individual tests
+// may override PI_FORGE_GLOBAL_SETTINGS_PATH and restore it in t.after().
+const hermeticGlobalDir = join(
+	tmpdir(),
+	`forge-global-default-${Date.now()}-${Math.random()}`,
+);
+await mkdir(hermeticGlobalDir, { recursive: true });
+const hermeticGlobalSettingsPath = join(hermeticGlobalDir, "settings.json");
+await writeFile(hermeticGlobalSettingsPath, JSON.stringify({}));
+process.env.PI_FORGE_GLOBAL_SETTINGS_PATH = hermeticGlobalSettingsPath;
+
 async function withFakeTicketCommands(t, handlers) {
 	const binDir = await mkdir(
 		join(tmpdir(), `forge-test-${Date.now()}-${Math.random()}`),
@@ -431,6 +443,40 @@ test("/forge warns when untrusted project settings are skipped", async (t) => {
 	assert.ok(
 		notifications.some((notification) => notification.level === "warning"),
 	);
+});
+
+test("/forge reads global forge settings from the configured settings path", async (t) => {
+	const globalDir = join(
+		tmpdir(),
+		`forge-global-test-${Date.now()}-${Math.random()}`,
+	);
+	await mkdir(globalDir, { recursive: true });
+	const globalPath = join(globalDir, "settings.json");
+	await writeFile(globalPath, JSON.stringify({ forge: { retries: 2 } }));
+
+	const previous = process.env.PI_FORGE_GLOBAL_SETTINGS_PATH;
+	process.env.PI_FORGE_GLOBAL_SETTINGS_PATH = globalPath;
+
+	const projectCwd = join(
+		tmpdir(),
+		`forge-noproject-${Date.now()}-${Math.random()}`,
+	);
+	await mkdir(projectCwd, { recursive: true });
+
+	t.after(async () => {
+		if (previous === undefined) {
+			delete process.env.PI_FORGE_GLOBAL_SETTINGS_PATH;
+		} else {
+			process.env.PI_FORGE_GLOBAL_SETTINGS_PATH = previous;
+		}
+		await rm(globalDir, { recursive: true, force: true });
+		await rm(projectCwd, { recursive: true, force: true });
+	});
+
+	const { sentMessages } = await invokeForge(t, { cwd: projectCwd });
+
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0], /retries: 2/);
 });
 
 test("forge settings sample is generated from the Zod-validated defaults", async () => {
