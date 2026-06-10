@@ -1,0 +1,42 @@
+{
+  "name": "pi-forge-command",
+  "version": "0.1.0",
+  "description": "Pi package that adds the /forge ticket-driven TDD orchestration command.",
+  "type": "module",
+  "keywords": [
+    "pi-package",
+    "pi-extension",
+    "forge",
+    "tdd"
+  ],
+  "license": "UNLICENSED",
+  "pi": {
+    "extensions": [
+      "./dist/extensions/forge.js"
+    ]
+  },
+  "files": [
+    "dist/",
+    "docs/",
+    "README.md"
+  ],
+  "peerDependencies": {
+    "@earendil-works/pi-coding-agent": "*"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "@earendil-works/pi-coding-agent": "*",
+    "@types/node": "^25.9.2",
+    "typescript": "^5.9.3"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "test": "pnpm build && node --test test/*.test.mjs",
+    "prepack": "pnpm build",
+    "generate:forge-settings": "node --experimental-strip-types scripts/write-forge-settings-sample.mjs"
+  }
+}
