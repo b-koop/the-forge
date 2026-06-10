@@ -77,10 +77,7 @@ async function readBehaviorTestNames() {
 	);
 }
 
-async function readVerifiedFeatureSpec(featureFileName) {
-	const featurePath = join(repoRoot, "features", featureFileName);
-	const feature = await readFile(featurePath, "utf8");
-
+function parseFeatureScenarios(featureFileName, feature) {
 	assert.equal(
 		feature.split("\n").filter((line) => line.trim().startsWith("Feature:"))
 			.length,
@@ -104,7 +101,6 @@ async function readVerifiedFeatureSpec(featureFileName) {
 		`${featureFileName} must contain at least one Scenario`,
 	);
 
-	const behaviorTestNames = await readBehaviorTestNames();
 	for (const scenario of scenarios) {
 		for (const keyword of ["Given ", "When ", "Then "]) {
 			assert.ok(
@@ -112,6 +108,22 @@ async function readVerifiedFeatureSpec(featureFileName) {
 				`Scenario "${scenario.name}" in ${featureFileName} must have a ${keyword.trim()} step`,
 			);
 		}
+	}
+
+	return scenarios;
+}
+
+async function readFeatureSpecScenarios(featureFileName) {
+	const featurePath = join(repoRoot, "features", featureFileName);
+	const feature = await readFile(featurePath, "utf8");
+	return parseFeatureScenarios(featureFileName, feature);
+}
+
+async function readVerifiedFeatureSpec(featureFileName) {
+	const scenarios = await readFeatureSpecScenarios(featureFileName);
+
+	const behaviorTestNames = await readBehaviorTestNames();
+	for (const scenario of scenarios) {
 		assert.ok(
 			behaviorTestNames.includes(scenario.name),
 			`Scenario "${scenario.name}" in ${featureFileName} must match a behavior test name in test/forge.test.mjs`,
@@ -540,6 +552,21 @@ test("readers see the settings warnings and fallbacks behavior as a verified fea
 		"/forge warns about malformed trusted project settings JSON",
 		"/forge warns when untrusted project settings are skipped",
 	]);
+});
+
+test("readers see the TDD micro-cycle workflow as a concise companion feature spec", async () => {
+	const guidePath = join(
+		repoRoot,
+		"docs",
+		"tdd-microcycle-programmatic-guide.md",
+	);
+	const guide = await readFile(guidePath, "utf8");
+	assert.match(guide, /## Related behavior spec/);
+
+	const scenarioNames = (await readFeatureSpecScenarios(
+		"tdd-microcycle-workflow.feature",
+	)).map((scenario) => scenario.name);
+	assert.ok(scenarioNames.length >= 1);
 });
 
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {
