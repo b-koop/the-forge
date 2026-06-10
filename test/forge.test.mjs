@@ -384,6 +384,34 @@ test("forge settings sample is generated from the Zod-validated defaults", async
 	assert.deepEqual(sample.forge.testCommands, ["pnpm typecheck", "pnpm test"]);
 });
 
+test("readers see the current forge settings defaults in the TDD guide", async () => {
+	const guidePath = join(
+		repoRoot,
+		"docs",
+		"tdd-microcycle-programmatic-guide.md",
+	);
+	const guide = await readFile(guidePath, "utf8");
+	const beforeYouBegin = guide.match(
+		/## Before you begin\n(?<section>[\s\S]*?)\n## Programmatic loop/,
+	)?.groups?.section;
+
+	assert.ok(
+		beforeYouBegin,
+		"expected the guide to have a Before you begin section",
+	);
+
+	const settingsExamples = [
+		...beforeYouBegin.matchAll(/```json\n([\s\S]*?)\n```/g),
+	]
+		.map((match) => JSON.parse(match[1]))
+		.filter(
+			(example) => example && typeof example === "object" && "forge" in example,
+		);
+
+	assert.equal(settingsExamples.length, 1);
+	assert.deepEqual(settingsExamples[0], generateForgeSettingsFileSample());
+});
+
 test("forge settings validation keeps legacy timeout alias and ignores invalid fields", () => {
 	const settings = mergeForgeSettings(DEFAULT_FORGE_SETTINGS, {
 		retries: -1,

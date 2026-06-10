@@ -18,9 +18,13 @@ Drive one behavior slice from the next smallest test through red, green, refacto
     "timeoutMs": 30000,
     "testCommands": ["pnpm typecheck", "pnpm test"],
     "skills": {
+      "intake": ["tdd", "bdd", "grill-me", "linear-cli"],
+      "decompose": ["bdd", "tdd", "naming"],
       "red": ["tdd", "bdd", "test-name"],
       "verifyRed": ["tdd", "vette"],
-      "finalVerify": ["tdd", "vette", "thermo-nuclear-code-quality-review"]
+      "green": ["tdd", "naming"],
+      "refactor": ["tdd", "naming", "thermo-nuclear-code-quality-review"],
+      "finalVerify": ["tdd", "vette", "thermo-nuclear-code-quality-review", "pr-validate"]
     }
   }
 }
