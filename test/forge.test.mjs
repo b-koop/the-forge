@@ -740,6 +740,54 @@ test("readers see the verified TDD micro-cycle feature spec at the public starti
 	]);
 });
 
+test("trusted contributor pull requests and mainline pushes run validation", async () => {
+	const workflow = await readFile(
+		join(repoRoot, ".github", "workflows", "ci.yml"),
+		"utf8",
+	);
+
+	function workflowEventBlock(eventName) {
+		const eventStart = workflow.match(
+			new RegExp(`(?:^|\\n)\\s{2}${eventName}:\\s*\\n`),
+		);
+		assert.ok(eventStart, `workflow must define ${eventName}`);
+
+		const blockStart = eventStart.index + eventStart[0].length;
+		const nextEvent = workflow.slice(blockStart).match(/\n\s{2}\w[\w-]*:\s*\n/);
+		return workflow.slice(
+			blockStart,
+			nextEvent ? blockStart + nextEvent.index : undefined,
+		);
+	}
+
+	for (const eventName of ["push", "pull_request"]) {
+		const block = workflowEventBlock(eventName);
+		assert.match(block, /branches:/, `${eventName} must filter branches`);
+		assert.match(block, /\bmain\b/, `${eventName} must include main`);
+		assert.match(block, /\bdev\b/, `${eventName} must include dev`);
+	}
+
+	for (const authorAssociation of ["OWNER", "MEMBER", "COLLABORATOR"]) {
+		assert.match(
+			workflow,
+			new RegExp(`\\b${authorAssociation}\\b`),
+			`${authorAssociation} pull request authors must be allowed`,
+		);
+	}
+
+	for (const command of [
+		"pnpm install --frozen-lockfile",
+		"pnpm typecheck",
+		"pnpm test",
+	]) {
+		assert.match(
+			workflow,
+			new RegExp(`run:\\s*${command.replaceAll(" ", "\\s+")}`),
+			`workflow must run ${command}`,
+		);
+	}
+});
+
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {
 	const fakeCommands = await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },
