@@ -517,6 +517,17 @@ test("readers see the untrusted ticket text labeling behavior as a verified feat
 	]);
 });
 
+test("readers see the settings synchronization behavior as a verified feature spec", async () => {
+	const scenarioNames = await readVerifiedFeatureSpec(
+		"forge-settings-stay-synchronized.feature",
+	);
+
+	assert.deepEqual(scenarioNames, [
+		"forge settings sample is generated from the Zod-validated defaults",
+		"readers see the current forge settings defaults in the TDD guide",
+	]);
+});
+
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {
 	const fakeCommands = await withFakeTicketCommands(t, {
 		gh: { stdout: "{}" },
