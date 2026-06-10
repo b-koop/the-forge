@@ -84,3 +84,7 @@ Pi does not currently expose an extension API for declaring custom `/settings` U
 - Verify agents must prove failures happen for the intended ticket reason.
 - Cleanup focuses on production readability, naming, simpler control flow, and duplication removal.
 - Temporary red checkpoint commits must be squashed into one final commit per behavior slice.
+
+## License
+
+MIT

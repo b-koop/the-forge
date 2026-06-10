@@ -9,7 +9,15 @@
     "forge",
     "tdd"
   ],
-  "license": "UNLICENSED",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/b-koop/the-forge.git"
+  },
+  "bugs": {
+    "url": "https://github.com/b-koop/the-forge/issues"
+  },
+  "homepage": "https://github.com/b-koop/the-forge#readme",
   "pi": {
     "extensions": [
       "./dist/extensions/forge.js"
@@ -18,7 +26,8 @@
   "files": [
     "dist/",
     "docs/",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
