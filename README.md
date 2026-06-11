@@ -42,7 +42,7 @@ Forge requires the agent to:
 
 ## Settings
 
-Forge reads an optional `forge` section from Pi settings. Global settings live in `~/.pi/agent/settings.json`; trusted project settings live in `.pi/settings.json` and override global values. The default settings sample is generated from the Zod-validated config model in `src/forge-config.ts` and checked against `docs/data/forge-settings.sample.json`. Regenerate it with `pnpm generate:forge-settings` after changing defaults.
+Forge reads an optional `forge` section from Pi settings. Global settings live in `~/.pi/agent/settings.json`; trusted project settings live in `.pi/settings.json` and override global values. The default settings sample is generated from the validated config model in `src/forge-config.ts` and checked against `docs/data/forge-settings.sample.json`. Regenerate it with `pnpm generate:forge-settings` after changing defaults.
 
 `testCommands` is the ordered list of executable validation commands Forge passes to the agent prompt. Forge does not execute them directly; the agent should run or select from these commands as applicable for the current slice. The legacy `testCommand` string is still accepted and normalized to `testCommands: [testCommand]`, but new settings should use `testCommands`.
 

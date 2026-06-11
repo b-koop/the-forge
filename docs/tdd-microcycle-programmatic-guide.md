@@ -9,7 +9,7 @@ Drive one behavior slice from the next smallest test through red, green, refacto
 - Work from a clean git index unless you intentionally resume an existing slice.
 - Know the behavior goal in domain language.
 - Know the repository's check commands, such as typecheck, lint, unit tests, or focused test commands.
-- Configure Forge in Pi settings when defaults are not enough. The default settings sample is generated from the Zod-validated config model in `src/forge-config.ts` and mirrored in `docs/data/forge-settings.sample.json`. `testCommands` is the ordered list of executable validation commands Forge passes to the agent prompt. Forge does not execute them directly; the agent should run or select from these commands as applicable for the current slice. The legacy `testCommand` string is still accepted and normalized to `testCommands: [testCommand]`, but new settings should use `testCommands`:
+- Configure Forge in Pi settings when defaults are not enough. The default settings sample is generated from the validated config model in `src/forge-config.ts` and mirrored in `docs/data/forge-settings.sample.json`. `testCommands` is the ordered list of executable validation commands Forge passes to the agent prompt. Forge does not execute them directly; the agent should run or select from these commands as applicable for the current slice. The legacy `testCommand` string is still accepted and normalized to `testCommands: [testCommand]`, but new settings should use `testCommands`:
 
 ```json
 {

@@ -33,9 +33,6 @@
   "peerDependencies": {
     "@earendil-works/pi-coding-agent": "*"
   },
-  "dependencies": {
-    "zod": "^4.4.3"
-  },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "*",
     "@types/node": "^25.9.2",

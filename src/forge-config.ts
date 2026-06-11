@@ -1,5 +1,3 @@
-import { z } from "zod";
-
 export const DEFAULT_COMMAND_TIMEOUT_MS = 30_000;
 
 export const FORGE_AI_STEPS = [
@@ -31,66 +29,25 @@ export const DEFAULT_FORGE_SKILLS: Record<ForgeAiStep, string[]> = {
 
 export const DEFAULT_TEST_COMMANDS = ["pnpm typecheck", "pnpm test"];
 
-const nonEmptyStringSchema = z.string().trim().min(1);
-const testCommandsSchema = z.array(nonEmptyStringSchema).min(1);
-const forgeAiStepSchema = z.enum(FORGE_AI_STEPS);
-const forgeSkillsSchema = z.record(
-	forgeAiStepSchema,
-	z.array(nonEmptyStringSchema).min(1),
-);
-const forgeSkillListSchema = z.array(nonEmptyStringSchema).min(1);
-const rawForgeSkillsSchema = z.partialRecord(
-	forgeAiStepSchema,
-	forgeSkillListSchema,
-);
+export type ForgeSettings = {
+	retries: number;
+	timeoutMs: number;
+	testCommands: string[];
+	skills: Record<ForgeAiStep, string[]>;
+};
 
-export const forgeSettingsSchema = z.object({
-	retries: z.number().int().min(0).default(0),
-	timeoutMs: z.number().int().positive().default(DEFAULT_COMMAND_TIMEOUT_MS),
-	testCommands: testCommandsSchema.default(DEFAULT_TEST_COMMANDS),
-	skills: forgeSkillsSchema.default(DEFAULT_FORGE_SKILLS),
-});
+export type RawForgeSettings = {
+	retries?: number;
+	timeoutMs?: number;
+	timeout?: number;
+	testCommands?: string[];
+	testCommand?: string;
+	skills?: Partial<Record<ForgeAiStep, string[]>>;
+};
 
-export const forgeSettingsFileSchema = z.object({
-	forge: forgeSettingsSchema,
-});
-
-function optionalValid<T extends z.ZodType>(schema: T) {
-	return z.preprocess((value) => {
-		const result = schema.safeParse(value);
-		return result.success ? result.data : undefined;
-	}, schema.optional());
-}
-
-function optionalValidForgeSkills() {
-	return z.preprocess((value) => {
-		if (typeof value !== "object" || value === null || Array.isArray(value)) {
-			return undefined;
-		}
-		const rawSkills = value as Record<string, unknown>;
-		const validSkills: Partial<Record<ForgeAiStep, string[]>> = {};
-		for (const step of FORGE_AI_STEPS) {
-			const result = forgeSkillListSchema.safeParse(rawSkills[step]);
-			if (result.success) validSkills[step] = result.data;
-		}
-		return Object.keys(validSkills).length > 0 ? validSkills : undefined;
-	}, rawForgeSkillsSchema.optional());
-}
-
-const tolerantNonNegativeInteger = optionalValid(z.number().int().min(0));
-const tolerantPositiveInteger = optionalValid(z.number().int().positive());
-
-export const rawForgeSettingsSchema = z.looseObject({
-	retries: tolerantNonNegativeInteger,
-	timeoutMs: tolerantPositiveInteger,
-	timeout: tolerantPositiveInteger,
-	testCommands: optionalValid(testCommandsSchema),
-	testCommand: optionalValid(nonEmptyStringSchema),
-	skills: optionalValidForgeSkills(),
-});
-
-export type ForgeSettings = z.infer<typeof forgeSettingsSchema>;
-export type RawForgeSettings = z.infer<typeof rawForgeSettingsSchema>;
+export type ForgeSettingsFile = {
+	forge: ForgeSettings;
+};
 
 export type ForgeSettingsWarning = {
 	source: string;
@@ -106,6 +63,15 @@ export type RawForgeSettingsParseResult = {
 	warnings: ForgeSettingsWarning[];
 };
 
+type ParseResult<T> =
+	| { success: true; data: T }
+	| { success: false; error: Error };
+
+type SchemaLike<T> = {
+	parse(value: unknown): T;
+	safeParse(value: unknown): ParseResult<T>;
+};
+
 const FORGE_SETTING_KEYS = new Set([
 	"retries",
 	"timeoutMs",
@@ -116,6 +82,119 @@ const FORGE_SETTING_KEYS = new Set([
 ]);
 
 const FORGE_AI_STEP_SET = new Set<string>(FORGE_AI_STEPS);
+
+function cloneSkills(
+	skills: Partial<Record<ForgeAiStep, string[]>>,
+): Partial<Record<ForgeAiStep, string[]>> {
+	const cloned: Partial<Record<ForgeAiStep, string[]>> = {};
+	for (const step of FORGE_AI_STEPS) {
+		if (skills[step]) cloned[step] = [...skills[step]];
+	}
+	return cloned;
+}
+
+function cloneSettings(settings: ForgeSettings): ForgeSettings {
+	return {
+		retries: settings.retries,
+		timeoutMs: settings.timeoutMs,
+		testCommands: [...settings.testCommands],
+		skills: cloneSkills(settings.skills) as Record<ForgeAiStep, string[]>,
+	};
+}
+
+function createSchema<T>(parse: (value: unknown) => T): SchemaLike<T> {
+	return {
+		parse,
+		safeParse(value: unknown): ParseResult<T> {
+			try {
+				return { success: true, data: parse(value) };
+			} catch (error) {
+				return {
+					success: false,
+					error: error instanceof Error ? error : new Error(String(error)),
+				};
+			}
+		},
+	};
+}
+
+function assertRecord(value: unknown, label: string): Record<string, unknown> {
+	if (typeof value !== "object" || value === null || Array.isArray(value)) {
+		throw new Error(`${label} must be an object.`);
+	}
+	return value as Record<string, unknown>;
+}
+
+function parseNonNegativeInteger(value: unknown, label: string): number {
+	if (typeof value !== "number" || !Number.isInteger(value) || value < 0) {
+		throw new Error(`${label} must be a non-negative integer.`);
+	}
+	return value;
+}
+
+function parsePositiveInteger(value: unknown, label: string): number {
+	if (typeof value !== "number" || !Number.isInteger(value) || value <= 0) {
+		throw new Error(`${label} must be a positive integer.`);
+	}
+	return value;
+}
+
+function parseNonEmptyString(value: unknown, label: string): string {
+	if (typeof value !== "string" || value.trim().length === 0) {
+		throw new Error(`${label} must be a non-empty string.`);
+	}
+	return value.trim();
+}
+
+function parseNonEmptyStringArray(value: unknown, label: string): string[] {
+	if (!Array.isArray(value) || value.length === 0) {
+		throw new Error(`${label} must be a non-empty string array.`);
+	}
+	return value.map((item, index) =>
+		parseNonEmptyString(item, `${label}[${index}]`),
+	);
+}
+
+function parseForgeSkills(value: unknown): Record<ForgeAiStep, string[]> {
+	const record = assertRecord(value, "skills");
+	const parsed: Partial<Record<ForgeAiStep, string[]>> = {};
+	for (const step of FORGE_AI_STEPS) {
+		if (!(step in record)) throw new Error(`skills.${step} is required.`);
+		parsed[step] = parseNonEmptyStringArray(record[step], `skills.${step}`);
+	}
+	return parsed as Record<ForgeAiStep, string[]>;
+}
+
+function parseForgeSettings(value: unknown): ForgeSettings {
+	const record =
+		value === undefined ? {} : assertRecord(value, "forge settings");
+	return {
+		retries:
+			"retries" in record
+				? parseNonNegativeInteger(record.retries, "retries")
+				: 0,
+		timeoutMs:
+			"timeoutMs" in record
+				? parsePositiveInteger(record.timeoutMs, "timeoutMs")
+				: DEFAULT_COMMAND_TIMEOUT_MS,
+		testCommands:
+			"testCommands" in record
+				? parseNonEmptyStringArray(record.testCommands, "testCommands")
+				: [...DEFAULT_TEST_COMMANDS],
+		skills:
+			"skills" in record
+				? parseForgeSkills(record.skills)
+				: (cloneSkills(DEFAULT_FORGE_SKILLS) as Record<ForgeAiStep, string[]>),
+	};
+}
+
+function parseForgeSettingsFile(value: unknown): ForgeSettingsFile {
+	const record = assertRecord(value, "settings file");
+	return { forge: parseForgeSettings(record.forge) };
+}
+
+export const forgeSettingsSchema = createSchema(parseForgeSettings);
+export const forgeSettingsFileSchema = createSchema(parseForgeSettingsFile);
 
 export const DEFAULT_FORGE_SETTINGS: ForgeSettings = forgeSettingsSchema.parse(
 	{},
@@ -170,94 +249,91 @@ function warnUnknownForgeKeys(
 function parseRetries(
 	value: Record<string, unknown>,
 	source: string,
-	parsed: Record<string, unknown>,
+	parsed: RawForgeSettings,
 	warnings: ForgeSettingsWarning[],
 ): void {
 	if (!("retries" in value)) return;
-	const result = z.number().int().min(0).safeParse(value.retries);
-	if (result.success) {
-		parsed.retries = result.data;
-		return;
+	try {
+		parsed.retries = parseNonNegativeInteger(value.retries, "retries");
+	} catch {
+		warnings.push(
+			warning(
+				source,
+				"forge.retries",
+				"retries",
+				`Expected a non-negative integer, got ${describeExpected(value.retries)}.`,
+				"Using the previous/default retry count.",
+				"Set retries to 0 or a positive whole number.",
+			),
+		);
 	}
-	warnings.push(
-		warning(
-			source,
-			"forge.retries",
-			"retries",
-			`Expected a non-negative integer, got ${describeExpected(value.retries)}.`,
-			"Using the previous/default retry count.",
-			"Set retries to 0 or a positive whole number.",
-		),
-	);
 }
 
 function parseTimeoutMs(
 	value: Record<string, unknown>,
 	source: string,
-	parsed: Record<string, unknown>,
+	parsed: RawForgeSettings,
 	warnings: ForgeSettingsWarning[],
 ): void {
 	if (!("timeoutMs" in value)) return;
-	const result = z.number().int().positive().safeParse(value.timeoutMs);
-	if (result.success) {
-		parsed.timeoutMs = result.data;
-		return;
+	try {
+		parsed.timeoutMs = parsePositiveInteger(value.timeoutMs, "timeoutMs");
+	} catch {
+		warnings.push(
+			warning(
+				source,
+				"forge.timeoutMs",
+				"timeoutMs",
+				`Expected a positive integer number of milliseconds, got ${describeExpected(value.timeoutMs)}.`,
+				"Using the previous/default timeout.",
+				"Set timeoutMs to a positive whole number such as 30000.",
+			),
+		);
 	}
-	warnings.push(
-		warning(
-			source,
-			"forge.timeoutMs",
-			"timeoutMs",
-			`Expected a positive integer number of milliseconds, got ${describeExpected(value.timeoutMs)}.`,
-			"Using the previous/default timeout.",
-			"Set timeoutMs to a positive whole number such as 30000.",
-		),
-	);
 }
 
 function parseLegacyTimeout(
 	value: Record<string, unknown>,
 	source: string,
-	parsed: Record<string, unknown>,
+	parsed: RawForgeSettings,
 	warnings: ForgeSettingsWarning[],
 ): void {
 	if (!("timeout" in value)) return;
-	const result = z.number().int().positive().safeParse(value.timeout);
-	if (result.success) {
-		parsed.timeout = result.data;
+	try {
+		parsed.timeout = parsePositiveInteger(value.timeout, "timeout");
 		warnings.push(
 			warning(
 				source,
 				"forge.timeout",
 				"timeout",
 				"Legacy Forge timeout key is deprecated.",
-				`Accepted for compatibility as timeoutMs=${result.data}.`,
+				`Accepted for compatibility as timeoutMs=${parsed.timeout}.`,
 				"Rename timeout to timeoutMs.",
 			),
 		);
-		return;
+	} catch {
+		warnings.push(
+			warning(
+				source,
+				"forge.timeout",
+				"timeout",
+				`Expected a positive integer number of milliseconds, got ${describeExpected(value.timeout)}.`,
+				"The legacy timeout was ignored.",
+				"Use timeoutMs with a positive whole number such as 30000.",
+			),
+		);
 	}
-	warnings.push(
-		warning(
-			source,
-			"forge.timeout",
-			"timeout",
-			`Expected a positive integer number of milliseconds, got ${describeExpected(value.timeout)}.`,
-			"The legacy timeout was ignored.",
-			"Use timeoutMs with a positive whole number such as 30000.",
-		),
-	);
 }
 
 function parseTestCommands(
 	value: Record<string, unknown>,
 	source: string,
-	parsed: Record<string, unknown>,
+	parsed: RawForgeSettings,
 	warnings: ForgeSettingsWarning[],
 ): void {
 	if (!("testCommands" in value)) return;
 	if (validNonEmptyStringArray(value.testCommands)) {
-		parsed.testCommands = value.testCommands;
+		parsed.testCommands = [...value.testCommands];
 		return;
 	}
 	warnings.push(
@@ -275,13 +351,12 @@ function parseTestCommands(
 function parseLegacyTestCommand(
 	value: Record<string, unknown>,
 	source: string,
-	parsed: Record<string, unknown>,
+	parsed: RawForgeSettings,
 	warnings: ForgeSettingsWarning[],
 ): void {
 	if (!("testCommand" in value)) return;
-	const result = nonEmptyStringSchema.safeParse(value.testCommand);
-	if (result.success) {
-		parsed.testCommand = result.data;
+	try {
+		parsed.testCommand = parseNonEmptyString(value.testCommand, "testCommand");
 		warnings.push(
 			warning(
 				source,
@@ -292,24 +367,24 @@ function parseLegacyTestCommand(
 				"Rename testCommand to testCommands and wrap the command in an array.",
 			),
 		);
-		return;
+	} catch {
+		warnings.push(
+			warning(
+				source,
+				"forge.testCommand",
+				"testCommand",
+				`Expected a non-empty command string, got ${describeExpected(value.testCommand)}.`,
+				"The legacy testCommand was ignored.",
+				"Use testCommands with a non-empty array of command strings.",
+			),
+		);
 	}
-	warnings.push(
-		warning(
-			source,
-			"forge.testCommand",
-			"testCommand",
-			`Expected a non-empty command string, got ${describeExpected(value.testCommand)}.`,
-			"The legacy testCommand was ignored.",
-			"Use testCommands with a non-empty array of command strings.",
-		),
-	);
 }
 
 function parseSkills(
 	value: Record<string, unknown>,
 	source: string,
-	parsed: Record<string, unknown>,
+	parsed: RawForgeSettings,
 	warnings: ForgeSettingsWarning[],
 ): void {
 	if (!("skills" in value)) return;
@@ -360,7 +435,7 @@ function parseSkillSteps(
 			continue;
 		}
 		if (validNonEmptyStringArray(skillList)) {
-			validSkills[step as ForgeAiStep] = skillList;
+			validSkills[step as ForgeAiStep] = [...skillList];
 			continue;
 		}
 		warnings.push(
@@ -370,7 +445,7 @@ function parseSkillSteps(
 				step,
 				`Expected a non-empty array of non-empty skill names, got ${describeExpected(skillList)}.`,
 				"Using the previous/default skills for this step.",
-				`Set skills.${step} to an array such as [\"tdd\"].`,
+				`Set skills.${step} to an array such as ["tdd"].`,
 			),
 		);
 	}
@@ -382,7 +457,7 @@ function validateRawForgeSettings(
 	source: string,
 ): RawForgeSettingsParseResult {
 	const warnings: ForgeSettingsWarning[] = [];
-	const parsed: Record<string, unknown> = {};
+	const parsed: RawForgeSettings = {};
 	warnUnknownForgeKeys(value, source, warnings);
 	parseRetries(value, source, parsed, warnings);
 	parseTimeoutMs(value, source, parsed, warnings);
@@ -391,7 +466,7 @@ function validateRawForgeSettings(
 	parseLegacyTestCommand(value, source, parsed, warnings);
 	parseSkills(value, source, parsed, warnings);
 	return {
-		settings: rawForgeSettingsSchema.parse(parsed),
+		settings: parsed,
 		warnings,
 	};
 }
@@ -430,7 +505,8 @@ export function mergeForgeSettingsWithWarnings(
 	source = "settings",
 ): { settings: ForgeSettings; warnings: ForgeSettingsWarning[] } {
 	const parsed = parseRawForgeSettingsWithWarnings(override, source);
-	if (!parsed.settings) return { settings: base, warnings: parsed.warnings };
+	if (!parsed.settings)
+		return { settings: cloneSettings(base), warnings: parsed.warnings };
 	return {
 		settings: forgeSettingsSchema.parse({
 			retries: parsed.settings.retries ?? base.retries,
@@ -461,9 +537,7 @@ export function generateForgeSettingsSample(): ForgeSettings {
 	return forgeSettingsSchema.parse({});
 }
 
-export function generateForgeSettingsFileSample(): z.infer<
-	typeof forgeSettingsFileSchema
-> {
+export function generateForgeSettingsFileSample(): ForgeSettingsFile {
 	return forgeSettingsFileSchema.parse({
 		forge: generateForgeSettingsSample(),
 	});

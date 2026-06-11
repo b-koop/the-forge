@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdir, readFile, rm, writeFile } from "node:fs/promises";
+import { cp, mkdir, readFile, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -486,7 +486,46 @@ test("/forge reads global forge settings from the configured settings path", asy
 	assert.match(sentMessages[0], /retries: 2/);
 });
 
-test("forge settings sample is generated from the Zod-validated defaults", async () => {
+test("Forge loads without third-party schema runtime dependencies", async (t) => {
+	const packageJson = JSON.parse(
+		await readFile(join(repoRoot, "package.json"), "utf8"),
+	);
+	const runtimeDependencies = packageJson.dependencies ?? {};
+	const source = await readFile(
+		join(repoRoot, "src", "forge-config.ts"),
+		"utf8",
+	);
+	const builtSource = await readFile(
+		join(repoRoot, "dist", "src", "forge-config.js"),
+		"utf8",
+	);
+	const runtimeDir = join(
+		tmpdir(),
+		`forge-runtime-no-schema-${Date.now()}-${Math.random()}`,
+	);
+
+	await mkdir(runtimeDir, { recursive: true });
+	await cp(join(repoRoot, "dist"), join(runtimeDir, "dist"), {
+		recursive: true,
+	});
+	await writeFile(
+		join(runtimeDir, "package.json"),
+		JSON.stringify({ type: "module" }),
+	);
+	t.after(async () => {
+		await rm(runtimeDir, { recursive: true, force: true });
+	});
+
+	assert.equal(runtimeDependencies.zod, undefined);
+	assert.doesNotMatch(source, /(?:from|require\()\s*["']zod(?:\/[^"']*)?["']/);
+	assert.doesNotMatch(
+		builtSource,
+		/(?:from|require\()\s*["']zod(?:\/[^"']*)?["']/,
+	);
+	await import(`file://${join(runtimeDir, "dist", "extensions", "forge.js")}`);
+});
+
+test("forge settings sample is generated from the validated defaults", async () => {
 	const samplePath = join(
 		repoRoot,
 		"docs",
@@ -707,7 +746,7 @@ test("readers see the settings synchronization behavior as a verified feature sp
 	);
 
 	assert.deepEqual(scenarioNames, [
-		"forge settings sample is generated from the Zod-validated defaults",
+		"forge settings sample is generated from the validated defaults",
 		"readers see the current forge settings defaults in the TDD guide",
 	]);
 });
@@ -786,6 +825,65 @@ test("trusted contributor pull requests and mainline pushes run validation", asy
 			`workflow must run ${command}`,
 		);
 	}
+});
+
+test("/forge explains which setup phase failed before stopping", async (t) => {
+	await withFakeTicketCommands(t, {
+		gh: { stdout: "{}" },
+		linear: { stdout: "Linear issue" },
+	});
+	let forgeHandler;
+	const sentMessages = [];
+	const notifications = [];
+	const statuses = [];
+	const pi = {
+		on() {},
+		registerCommand(name, command) {
+			if (name === "forge") forgeHandler = command.handler;
+		},
+		sendUserMessage(...args) {
+			sentMessages.push(args);
+		},
+	};
+
+	registerForgeExtension(pi);
+
+	await forgeHandler("ABC-123", {
+		cwd: repoRoot,
+		isIdle() {
+			throw new Error("idle state unavailable");
+		},
+		ui: {
+			notify(message, level) {
+				notifications.push({ message, level });
+			},
+			setStatus(name, message) {
+				statuses.push({ name, message });
+			},
+		},
+	});
+
+	assert.ok(
+		notifications.some(
+			(notification) =>
+				notification.level === "error" &&
+				/failed while checking whether the agent is idle/.test(
+					notification.message,
+				) &&
+				/idle state unavailable/.test(notification.message),
+		),
+	);
+	assert.equal(sentMessages.length, 1);
+	assert.match(sentMessages[0][0], /# Forge failed to start/);
+	assert.match(
+		sentMessages[0][0],
+		/Failed phase: checking whether the agent is idle/,
+	);
+	assert.match(sentMessages[0][0], /idle state unavailable/);
+	assert.match(
+		statuses.map((item) => item.message).join("\n"),
+		/blocked|checking whether the agent is idle/,
+	);
 });
 
 test("/forge blocks dash-prefixed input before ticket lookup commands receive it", async (t) => {

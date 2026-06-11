@@ -311,6 +311,31 @@ Final report must include:
 - Git cleanup result: status, temporary commits/branches/worktrees removed, and confirmation no unrelated files remain.
 - Remaining requirements, blockers, or ticket observations.`;
 }
+function formatErrorDetail(error) {
+    if (error instanceof Error)
+        return error.message || error.name;
+    return String(error);
+}
+function buildForgeFailurePrompt(target, stage, error) {
+    const detail = formatErrorDetail(error);
+    return `# Forge failed to start
+
+Run Forge for: ${target}
+
+Failed phase: ${stage}
+
+Problem: ${detail}
+
+What this means:
+- The /forge extension stopped before it could hand off to the AI agent.
+- The failed phase above names the setup step that needs attention.
+- Fix that setup problem, then run /forge again.
+
+Troubleshooting hints:
+- If the failure mentions settings, check ~/.pi/agent/settings.json and trusted .pi/settings.json.
+- If the failure mentions git, gh, or linear, verify those CLIs work in this repository.
+- If the failure mentions agent idle state or follow-up delivery, retry after the current agent response finishes.`;
+}
 function renderStatus(status) {
     if (!status)
         return "forge idle";
@@ -339,45 +364,72 @@ export default function (pi) {
     pi.registerCommand("forge", {
         description: "Orchestrate ticket-driven TDD with red, green, verify, cleanup agents and mandatory git checks.",
         handler: async (args, ctx) => {
-            const parsed = parseArgs(args);
-            const target = parsed.selector || "current branch";
-            if (isDashPrefixedSelector(parsed.selector)) {
+            let stage = "parsing command arguments";
+            let target = "current branch";
+            try {
+                const parsed = parseArgs(args);
+                target = parsed.selector || "current branch";
+                if (isDashPrefixedSelector(parsed.selector)) {
+                    currentStatus = {
+                        phase: "blocked",
+                        target,
+                        progress: "invalid selector",
+                    };
+                    publishStatus(ctx);
+                    ctx.ui.notify(`/forge blocked invalid ticket selector: ${parsed.selector}`, "error");
+                    return;
+                }
+                ctx.ui.notify(`/forge resolving ${target}`, "info");
+                stage = "loading Forge settings";
+                const isProjectTrusted = ctx.isProjectTrusted;
+                const settingsResult = loadForgeSettingsWithWarnings(ctx.cwd, {
+                    projectTrusted: isProjectTrusted?.() ?? false,
+                });
+                const { settings } = settingsResult;
+                if (settingsResult.warnings.length > 0) {
+                    ctx.ui.notify(settingsWarningNotification(settingsResult.warnings), "warning");
+                }
+                stage = "collecting git and ticket context";
+                const [gitContext, lookups] = await Promise.all([
+                    collectGitContext(ctx.cwd, settings),
+                    collectTicketLookups(parsed.selector, ctx.cwd, settings),
+                ]);
+                stage = "building the Forge handoff prompt";
+                const prompt = buildForgePrompt(parsed, gitContext, lookups, settings, settingsResult.warnings);
+                stage = "checking whether the agent is idle";
+                const queued = !ctx.isIdle();
+                currentStatus = {
+                    phase: queued ? "queued" : "working",
+                    target,
+                    progress: "intake",
+                };
+                publishStatus(ctx);
+                stage = queued
+                    ? "queueing the Forge handoff prompt"
+                    : "delivering the Forge handoff prompt";
+                if (queued) {
+                    pi.sendUserMessage(prompt, { deliverAs: "followUp" });
+                    ctx.ui.notify("/forge queued as follow-up", "info");
+                    return;
+                }
+                pi.sendUserMessage(prompt);
+            }
+            catch (error) {
                 currentStatus = {
                     phase: "blocked",
                     target,
-                    progress: "invalid selector",
+                    progress: stage,
                 };
-                publishStatus(ctx);
-                ctx.ui.notify(`/forge blocked invalid ticket selector: ${parsed.selector}`, "error");
-                return;
+                try {
+                    publishStatus(ctx);
+                }
+                catch {
+                    // Status reporting is best effort; the notification and prompt carry the actionable failure.
+                }
+                const detail = formatErrorDetail(error);
+                ctx.ui.notify(`/forge failed while ${stage}: ${detail}`, "error");
+                pi.sendUserMessage(buildForgeFailurePrompt(target, stage, error));
             }
-            ctx.ui.notify(`/forge resolving ${target}`, "info");
-            const isProjectTrusted = ctx.isProjectTrusted;
-            const settingsResult = loadForgeSettingsWithWarnings(ctx.cwd, {
-                projectTrusted: isProjectTrusted?.() ?? false,
-            });
-            const { settings } = settingsResult;
-            if (settingsResult.warnings.length > 0) {
-                ctx.ui.notify(settingsWarningNotification(settingsResult.warnings), "warning");
-            }
-            const [gitContext, lookups] = await Promise.all([
-                collectGitContext(ctx.cwd, settings),
-                collectTicketLookups(parsed.selector, ctx.cwd, settings),
-            ]);
-            const prompt = buildForgePrompt(parsed, gitContext, lookups, settings, settingsResult.warnings);
-            const queued = !ctx.isIdle();
-            currentStatus = {
-                phase: queued ? "queued" : "working",
-                target,
-                progress: "intake",
-            };
-            publishStatus(ctx);
-            if (queued) {
-                pi.sendUserMessage(prompt, { deliverAs: "followUp" });
-                ctx.ui.notify("/forge queued as follow-up", "info");
-                return;
-            }
-            pi.sendUserMessage(prompt);
         },
     });
 }
